@@ -1,0 +1,30 @@
+body {
+    width: 300px;
+    height: 150px;
+    text-align: center;
+    background-color: aqua;
+}
+
+button {
+    border-radius: 5px;
+    width: 90px;
+    height: 40px;
+    vertical-align: middle;
+}
+
+button.save {
+    background-color: white;
+}
+
+button.save:hover {
+    background-color: rgb(148, 148, 148);
+}
+
+button.restore {
+    background-color: rgb(70, 70, 255);
+    color: white;
+}
+
+button.restore:hover {
+    background-color: rgb(46, 46, 168);
+}
