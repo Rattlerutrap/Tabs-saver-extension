@@ -12,19 +12,19 @@ button {
     vertical-align: middle;
 }
 
-button.save {
+button#save {
     background-color: white;
 }
 
-button.save:hover {
+button#save:hover {
     background-color: rgb(148, 148, 148);
 }
 
-button.restore {
+button#restore {
     background-color: rgb(70, 70, 255);
     color: white;
 }
 
-button.restore:hover {
+button#restore:hover {
     background-color: rgb(46, 46, 168);
 }
