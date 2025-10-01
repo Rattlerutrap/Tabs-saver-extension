@@ -3,7 +3,12 @@
     "description": "Extract all tab currently active tabs in file",
     "version": "0.1",
     "manifest_version": 3,
-    "icons": {},
+    "icons": {
+        "16":"icons/16.png",
+        "32":"icons/32.png",
+        "48":"icons/48.png",
+        "128":"icons/128.png"
+    },
     "action": {},
     "permissions": [],
     "background":{}
