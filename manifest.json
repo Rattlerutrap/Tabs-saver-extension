@@ -1,0 +1,10 @@
+{
+    "name": "Tabs saver",
+    "description": "Extract all tab currently active tabs in file",
+    "version": "0.1",
+    "manifest_version": 3,
+    "icons": {},
+    "action": {},
+    "permissions": [],
+    "background":{}
+}
