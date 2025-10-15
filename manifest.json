@@ -12,6 +12,8 @@
     "action": {
         "default_popup":"popup.html"
     },
-    "permissions": [],
+    "permissions": [
+        "tabs"
+    ],
     "background":{}
 }
