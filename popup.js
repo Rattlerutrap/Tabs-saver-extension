@@ -12,33 +12,58 @@ document.addEventListener('DOMContentLoaded', function() {
     
     setTimeout(() => {
       statusDiv.style.display = 'none';
-    }, 3000);
+    }, 5000);
   }
 
-  // Сохранение вкладок
+  // Сохранение вкладок с группами и состоянием
   saveButton.addEventListener('click', async function() {
     try {
-      // Получаем все вкладки текущего окна
-      const tabs = await chrome.tabs.query({ currentWindow: true });
+      // Получаем все вкладки и группы
+      const [tabs, groups] = await Promise.all([
+        chrome.tabs.query({ currentWindow: true }),
+        chrome.tabGroups.query({ windowId: chrome.windows.WINDOW_ID_CURRENT })
+      ]);
       
-      // Формируем содержимое файла
-      let fileContent = `Сохраненные вкладки (${new Date().toLocaleString()}):\n\n`;
-      
-      tabs.forEach((tab, index) => {
-        fileContent += `${index + 1}. ${tab.title}\n${tab.url}\n\n`;
-      });
+      // Подготавливаем данные для сохранения
+      const saveData = {
+        timestamp: new Date().toISOString(),
+        tabs: tabs.map(tab => ({
+          id: tab.id,
+          title: tab.title,
+          url: tab.url,
+          pinned: tab.pinned,
+          groupId: tab.groupId,
+          index: tab.index
+        })),
+        groups: groups.map(group => ({
+          id: group.id,
+          title: group.title,
+          color: group.color,
+          collapsed: group.collapsed
+        })),
+        metadata: {
+          totalTabs: tabs.length,
+          pinnedTabs: tabs.filter(tab => tab.pinned).length,
+          groupsCount: groups.length
+        }
+      };
       
       // Создаем Blob и скачиваем файл
-      const blob = new Blob([fileContent], { type: 'text/plain' });
+      const blob = new Blob([JSON.stringify(saveData, null, 2)], { 
+        type: 'application/json' 
+      });
       const url = URL.createObjectURL(blob);
       
       chrome.downloads.download({
         url: url,
-        filename: `saved_tabs_${Date.now()}.txt`,
+        filename: `saved_tabs_${Date.now()}.json`,
         saveAs: true
       });
       
-      showStatus(`Сохранено ${tabs.length} вкладок`, true);
+      showStatus(
+        `Сохранено: ${tabs.length} вкладок, ${groups.length} групп, ${saveData.metadata.pinnedTabs} закрепленных`, 
+        true
+      );
       
       // Освобождаем URL
       setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -63,11 +88,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     reader.onload = function(e) {
       try {
-        const content = e.target.result;
-        restoreTabsFromContent(content);
+        const saveData = JSON.parse(e.target.result);
+        restoreTabsFromData(saveData);
       } catch (error) {
         console.error('Ошибка при чтении файла:', error);
-        showStatus('Ошибка при чтении файла', false);
+        showStatus('Ошибка: Неверный формат файла', false);
       }
     };
     
@@ -81,49 +106,81 @@ document.addEventListener('DOMContentLoaded', function() {
     fileInput.value = '';
   });
 
-  // Функция восстановления вкладок из содержимого файла
-  async function restoreTabsFromContent(content) {
+  // Функция восстановления вкладок из данных
+  async function restoreTabsFromData(saveData) {
     try {
-      const lines = content.split('\n');
-      const urls = [];
-      
-      // Ищем URL в содержимом файла
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        
-        // Проверяем, является ли строка URL
-        if (trimmedLine.startsWith('http://') || 
-            trimmedLine.startsWith('https://') ||
-            trimmedLine.startsWith('ftp://') ||
-            trimmedLine.startsWith('file://')) {
-          urls.push(trimmedLine);
-        }
+      if (!saveData.tabs || !Array.isArray(saveData.tabs)) {
+        throw new Error('Неверный формат данных');
       }
-      
-      if (urls.length === 0) {
-        showStatus('В файле не найдено URL для восстановления', false);
-        return;
-      }
-      
-      // Создаем новые вкладки для каждого URL
-      let createdCount = 0;
-      for (const url of urls) {
+
+      const createdTabs = [];
+      const groupMap = new Map(); // Для связи старых и новых ID групп
+
+      // Сначала создаем все вкладки
+      for (const tabData of saveData.tabs) {
         try {
-          await chrome.tabs.create({ url: url, active: false });
-          createdCount++;
+          const tab = await chrome.tabs.create({
+            url: tabData.url,
+            active: false,
+            pinned: tabData.pinned
+          });
           
-          // Небольшая задержка чтобы не перегружать браузер
-          await new Promise(resolve => setTimeout(resolve, 100));
+          createdTabs.push({
+            id: tab.id,
+            originalData: tabData
+          });
+          
+          // Сохраняем связь старого groupId с новой вкладкой
+          if (tabData.groupId !== -1) {
+            if (!groupMap.has(tabData.groupId)) {
+              groupMap.set(tabData.groupId, []);
+            }
+            groupMap.get(tabData.groupId).push(tab.id);
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 50));
         } catch (error) {
-          console.error(`Ошибка при создании вкладки для ${url}:`, error);
+          console.error(`Ошибка при создании вкладки для ${tabData.url}:`, error);
         }
       }
-      
-      showStatus(`Восстановлено ${createdCount} вкладок`, true);
+
+      // Затем создаем группы и добавляем в них вкладки
+      if (saveData.groups && Array.isArray(saveData.groups)) {
+        for (const groupData of saveData.groups) {
+          const tabIds = groupMap.get(groupData.id);
+          if (tabIds && tabIds.length > 0) {
+            try {
+              const groupId = await chrome.tabs.group({
+                tabIds: tabIds,
+                createProperties: {
+                  windowId: chrome.windows.WINDOW_ID_CURRENT
+                }
+              });
+              
+              // Устанавливаем свойства группы
+              await chrome.tabGroups.update(groupId, {
+                title: groupData.title,
+                color: groupData.color,
+                collapsed: groupData.collapsed
+              });
+              
+            } catch (error) {
+              console.error('Ошибка при создании группы:', error);
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+      }
+
+      showStatus(
+        `Восстановлено: ${createdTabs.length} вкладок, ${groupMap.size} групп`, 
+        true
+      );
       
     } catch (error) {
       console.error('Ошибка при восстановлении вкладок:', error);
-      showStatus('Ошибка при восстановлении вкладок', false);
+      showStatus('Ошибка при восстановлении вкладок: ' + error.message, false);
     }
   }
 });
